@@ -1,12 +1,31 @@
 from evdev import InputDevice, ecodes
 import select
+import subprocess
 
 KEYBOARD_DEVICE = "/dev/input/event12"
 MOUSE_DEVICE = "/dev/input/event3"
 
+IMAC_WIDTH = 1920
+EDGE_THRESHOLD = 5
+
 
 def send_message(connection, message):
     connection.sendall((message + "\n").encode("utf-8"))
+
+
+def get_mouse_position():
+    result = subprocess.check_output(
+        ["xdotool", "getmouselocation", "--shell"]
+    ).decode("utf-8")
+
+    position = {}
+
+    for line in result.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            position[key] = int(value)
+
+    return position["X"], position["Y"]
 
 
 def start_input_listener(connection):
@@ -15,7 +34,8 @@ def start_input_listener(connection):
 
     print("Clavier : {}".format(keyboard.name))
     print("Souris : {}".format(mouse.name))
-    print("Transmission clavier + souris...")
+    print("Détection du bord droit activée...")
+    print("iMac : 1920 x 1200")
 
     devices = [keyboard, mouse]
 
@@ -33,10 +53,6 @@ def start_input_listener(connection):
 
             for event in events:
 
-                # ==================================================
-                # CLAVIER
-                # ==================================================
-
                 if device == keyboard:
 
                     if event.type != ecodes.EV_KEY:
@@ -49,15 +65,7 @@ def start_input_listener(connection):
 
                     send_message(connection, message)
 
-                # ==================================================
-                # SOURIS
-                # ==================================================
-
                 elif device == mouse:
-
-                    # --------------------------
-                    # MOUVEMENT
-                    # --------------------------
 
                     if event.type == ecodes.EV_REL:
 
@@ -69,10 +77,6 @@ def start_input_listener(connection):
 
                         elif event.code == ecodes.REL_WHEEL:
                             mouse_wheel += event.value
-
-                    # --------------------------
-                    # CLICS
-                    # --------------------------
 
                     elif event.type == ecodes.EV_KEY:
 
@@ -94,10 +98,7 @@ def start_input_listener(connection):
                                 "M:C:{}".format(event.value)
                             )
 
-        # ==========================================================
-        # ON ENVOIE LE MOUVEMENT EN UNE FOIS
-        # ==========================================================
-
+        # Transmission des mouvements
         if mouse_x != 0:
             send_message(
                 connection,
@@ -115,3 +116,13 @@ def start_input_listener(connection):
                 connection,
                 "M:W:{}".format(mouse_wheel)
             )
+
+        # Test du bord droit
+        try:
+            x, y = get_mouse_position()
+
+            if x >= IMAC_WIDTH - EDGE_THRESHOLD:
+                print(">>> BORD DROIT DÉTECTÉ : x={}, y={}".format(x, y))
+
+        except Exception as error:
+            print("Erreur position souris :", error)
