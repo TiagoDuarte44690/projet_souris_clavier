@@ -8,7 +8,12 @@ def move_to(x, y):
     mouse.position = (x, y)
 
 
+def get_position():
+    return mouse.position
+
+
 def handle_mouse(axis, value):
+
     value = int(value)
 
     if axis == "X":
