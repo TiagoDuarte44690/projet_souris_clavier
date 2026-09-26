@@ -6,7 +6,11 @@ KEYBOARD_DEVICE = "/dev/input/event12"
 MOUSE_DEVICE = "/dev/input/event3"
 
 IMAC_WIDTH = 1920
+IMAC_HEIGHT = 1200
+
 EDGE_THRESHOLD = 5
+
+ACTIVE_MACHINE = "IMAC"
 
 
 def send_message(connection, message):
@@ -29,13 +33,16 @@ def get_mouse_position():
 
 
 def start_input_listener(connection):
+    global ACTIVE_MACHINE
+
     keyboard = InputDevice(KEYBOARD_DEVICE)
     mouse = InputDevice(MOUSE_DEVICE)
 
     print("Clavier : {}".format(keyboard.name))
     print("Souris : {}".format(mouse.name))
+    print("Transmission clavier + souris...")
     print("Détection du bord droit activée...")
-    print("iMac : 1920 x 1200")
+    print("iMac : {} x {}".format(IMAC_WIDTH, IMAC_HEIGHT))
 
     devices = [keyboard, mouse]
 
@@ -53,10 +60,17 @@ def start_input_listener(connection):
 
             for event in events:
 
+                # ========================================================
+                # CLAVIER
+                # ========================================================
+
                 if device == keyboard:
 
                     if event.type != ecodes.EV_KEY:
                         continue
+
+                    # Pour l'instant, le clavier est toujours transmis.
+                    # La gestion du clavier actif viendra ensuite.
 
                     message = "K:{}:{}".format(
                         event.code,
@@ -64,6 +78,10 @@ def start_input_listener(connection):
                     )
 
                     send_message(connection, message)
+
+                # ========================================================
+                # SOURIS
+                # ========================================================
 
                 elif device == mouse:
 
@@ -98,7 +116,10 @@ def start_input_listener(connection):
                                 "M:C:{}".format(event.value)
                             )
 
-        # Transmission des mouvements
+        # ================================================================
+        # TRANSMISSION DES MOUVEMENTS
+        # ================================================================
+
         if mouse_x != 0:
             send_message(
                 connection,
@@ -117,12 +138,41 @@ def start_input_listener(connection):
                 "M:W:{}".format(mouse_wheel)
             )
 
-        # Test du bord droit
-        try:
-            x, y = get_mouse_position()
+        # ================================================================
+        # DÉTECTION DU BORD DROIT DE L'iMAC
+        # ================================================================
 
-            if x >= IMAC_WIDTH - EDGE_THRESHOLD:
-                print(">>> BORD DROIT DÉTECTÉ : x={}, y={}".format(x, y))
+        if ACTIVE_MACHINE == "IMAC":
 
-        except Exception as error:
-            print("Erreur position souris :", error)
+            try:
+                x, y = get_mouse_position()
+
+                if x >= IMAC_WIDTH - EDGE_THRESHOLD:
+
+                    print(
+                        ">>> BASCULEMENT VERS LENOVO : "
+                        "x={}, y={}".format(x, y)
+                    )
+
+                    send_message(
+                        connection,
+                        "SWITCH:LENOVO:{}:{}".format(x, y)
+                    )
+
+                    ACTIVE_MACHINE = "LENOVO"
+
+                    # On éloigne légèrement le curseur du bord
+                    # pour éviter de déclencher le switch en boucle.
+                    subprocess.call([
+                        "xdotool",
+                        "mousemove",
+                        str(IMAC_WIDTH - 20),
+                        str(y)
+                    ])
+
+            except Exception as error:
+
+                print(
+                    "Erreur position souris : {}"
+                    .format(error)
+                )

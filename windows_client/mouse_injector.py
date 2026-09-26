@@ -1,6 +1,11 @@
 from pynput.mouse import Controller, Button
 
+
 mouse = Controller()
+
+
+def move_to(x, y):
+    mouse.position = (x, y)
 
 
 def handle_mouse(axis, value):
