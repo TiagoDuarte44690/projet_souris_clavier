@@ -1,5 +1,4 @@
 from network import connect_to_server
-from input_injector import key_down, key_up
 
 
 def main():
