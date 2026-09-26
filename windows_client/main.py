@@ -1,5 +1,9 @@
 from network import connect_to_server
-from input_injector import handle_key
+
+from input_injector import (
+    handle_key
+)
+
 from mouse_injector import (
     handle_mouse,
     handle_click,
@@ -16,10 +20,13 @@ LENOVO_HEIGHT = 864
 
 ACTIVE_MACHINE = False
 
-mouse_position_lock = threading.Lock()
 
+# ============================================================
+# LENOVO → iMAC
+# ============================================================
 
 def send_switch_to_imac(client):
+
     global ACTIVE_MACHINE
 
     if not ACTIVE_MACHINE:
@@ -27,16 +34,29 @@ def send_switch_to_imac(client):
 
     try:
 
+        x, y = get_position()
+
+        print("")
         print("================================")
         print(">>> BORD GAUCHE LENOVO")
         print(">>> RETOUR VERS IMAC")
         print("================================")
 
+        # Envoie la position Y du curseur Lenovo.
         client.sendall(
-            b"SWITCH:IMAC\n"
+            "SWITCH:IMAC:{}\n".format(
+                y
+            ).encode("utf-8")
         )
 
         ACTIVE_MACHINE = False
+
+        # On éloigne légèrement le curseur
+        # du bord gauche pour éviter une répétition.
+        move_to(
+            5,
+            y
+        )
 
     except Exception as error:
 
@@ -46,13 +66,22 @@ def send_switch_to_imac(client):
         )
 
 
+# ============================================================
+# SURVEILLANCE DU BORD GAUCHE
+# ============================================================
+
 def monitor_mouse_edge(client):
 
     global ACTIVE_MACHINE
 
     while True:
 
-        time.sleep(0.01)
+        time.sleep(
+            0.01
+        )
+
+        # Le Lenovo n'est surveillé
+        # que lorsqu'il est actif.
 
         if not ACTIVE_MACHINE:
             continue
@@ -67,12 +96,6 @@ def monitor_mouse_edge(client):
                     client
                 )
 
-                # Évite le déclenchement permanent.
-                move_to(
-                    5,
-                    y
-                )
-
         except Exception as error:
 
             print(
@@ -80,6 +103,10 @@ def monitor_mouse_edge(client):
                 error
             )
 
+
+# ============================================================
+# PROGRAMME PRINCIPAL
+# ============================================================
 
 def main():
 
@@ -91,10 +118,16 @@ def main():
 
     client = connect_to_server()
 
+    print("")
     print("Le Lenovo est connecté à l'iMac.")
     print("En attente du passage de la souris...")
+    print("")
 
     buffer = ""
+
+    # ========================================================
+    # THREAD SURVEILLANCE BORD GAUCHE
+    # ========================================================
 
     edge_thread = threading.Thread(
         target=monitor_mouse_edge,
@@ -104,9 +137,15 @@ def main():
 
     edge_thread.start()
 
+    # ========================================================
+    # RÉCEPTION RÉSEAU
+    # ========================================================
+
     while True:
 
-        data = client.recv(4096)
+        data = client.recv(
+            4096
+        )
 
         if not data:
 
@@ -122,9 +161,11 @@ def main():
 
         while "\n" in buffer:
 
-            line, buffer = buffer.split(
-                "\n",
-                1
+            line, buffer = (
+                buffer.split(
+                    "\n",
+                    1
+                )
             )
 
             if not line:
@@ -134,36 +175,49 @@ def main():
 
             try:
 
-                # ======================================================
+                # =================================================
                 # CHANGEMENT DE MACHINE
-                # ======================================================
+                # =================================================
 
                 if parts[0] == "SWITCH":
+
+                    # ---------------------------------------------
+                    # iMAC → LENOVO
+                    # ---------------------------------------------
 
                     if (
                         len(parts) >= 2
                         and parts[1] == "LENOVO"
                     ):
 
-                        y_imac = int(
-                            parts[2]
-                        )
+                        if len(parts) >= 3:
 
-                        # Conversion verticale :
-                        #
-                        # iMac 1200 px
-                        # Lenovo 864 px
+                            y_imac = int(
+                                parts[2]
+                            )
 
-                        y_lenovo = int(
-                            y_imac
-                            * (LENOVO_HEIGHT - 1)
-                            / 1199
-                        )
+                            # Conversion :
+                            #
+                            # iMac 1200 px
+                            # Lenovo 864 px
+
+                            y_lenovo = int(
+                                y_imac
+                                * (LENOVO_HEIGHT - 1)
+                                / (1200 - 1)
+                            )
+
+                        else:
+
+                            y_lenovo = (
+                                LENOVO_HEIGHT // 2
+                            )
 
                         print(
                             ">>> PASSAGE LENOVO"
                         )
 
+                        # Curseur au bord gauche.
                         move_to(
                             5,
                             y_lenovo
@@ -171,24 +225,17 @@ def main():
 
                         ACTIVE_MACHINE = True
 
-                    elif (
-                        len(parts) >= 2
-                        and parts[1] == "IMAC"
-                    ):
-
-                        print(
-                            ">>> PASSAGE IMAC"
-                        )
-
-                        ACTIVE_MACHINE = False
-
                     continue
 
-                # ======================================================
+                # =================================================
                 # CLAVIER
-                # ======================================================
+                # =================================================
 
                 if parts[0] == "K":
+
+                    # Sécurité :
+                    # on ignore le clavier si Lenovo
+                    # n'est pas la machine active.
 
                     if not ACTIVE_MACHINE:
                         continue
@@ -206,9 +253,9 @@ def main():
                         value
                     )
 
-                # ======================================================
+                # =================================================
                 # SOURIS
-                # ======================================================
+                # =================================================
 
                 elif parts[0] == "M":
 
@@ -255,4 +302,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
