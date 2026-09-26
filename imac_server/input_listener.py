@@ -8,7 +8,7 @@ def start_input_listener(connection):
     keyboard = InputDevice(KEYBOARD_DEVICE)
 
     print("Clavier détecté : {}".format(keyboard.name))
-    print("Écoute des touches...")
+    print("Transmission des touches vers le Lenovo...")
 
     for event in keyboard.read_loop():
 
