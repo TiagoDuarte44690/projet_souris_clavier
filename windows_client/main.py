@@ -1,4 +1,5 @@
-from network import connect_to_server, send_message
+from network import connect_to_server
+from input_injector import key_down, key_up
 
 
 def main():
@@ -9,10 +10,16 @@ def main():
     client = connect_to_server()
 
     print("Le Lenovo est connecté à l'iMac.")
+    print("En attente des touches...")
 
-    send_message(client, "TEST_LAN")
+    while True:
+        data = client.recv(1024)
 
-    client.close()
+        if not data:
+            print("Connexion fermée par l'iMac.")
+            break
+
+        print("Données reçues :", data)
 
 
 if __name__ == "__main__":

@@ -1,18 +1,12 @@
-def move_mouse(x, y):
-    pass
+from pynput.keyboard import Controller
 
 
-def mouse_button(button, pressed):
-    pass
+keyboard = Controller()
 
 
-def mouse_scroll(amount):
-    pass
+def key_down(key):
+    keyboard.press(key)
 
 
-def key_press(key):
-    pass
-
-
-def key_release(key):
-    pass
+def key_up(key):
+    keyboard.release(key)
