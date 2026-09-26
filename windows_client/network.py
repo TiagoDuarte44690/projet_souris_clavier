@@ -18,3 +18,10 @@ def connect_to_server():
     print("Connexion réussie !")
 
     return client
+
+
+def send_message(client, message):
+    data = message.encode("utf-8")
+    client.sendall(data)
+
+    print("Message envoyé : {}".format(message))

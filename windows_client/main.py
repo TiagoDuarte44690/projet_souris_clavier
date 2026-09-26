@@ -1,4 +1,4 @@
-from network import connect_to_server
+from network import connect_to_server, send_message
 
 
 def main():
@@ -9,6 +9,8 @@ def main():
     client = connect_to_server()
 
     print("Le Lenovo est connecté à l'iMac.")
+
+    send_message(client, "TEST_LAN")
 
     client.close()
 

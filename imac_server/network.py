@@ -27,4 +27,10 @@ def start_server():
 
     print("Connexion reçue depuis : {}".format(address))
 
+    data = connection.recv(1024)
+
+    if data:
+        message = data.decode("utf-8")
+        print("Message reçu : {}".format(message))
+
     return server, connection
