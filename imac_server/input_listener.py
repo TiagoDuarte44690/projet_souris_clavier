@@ -1,7 +1,13 @@
 from evdev import InputDevice, ecodes
+
 import select
 import subprocess
+import time
 
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
 KEYBOARD_DEVICE = "/dev/input/event12"
 MOUSE_DEVICE = "/dev/input/event3"
@@ -9,9 +15,33 @@ MOUSE_DEVICE = "/dev/input/event3"
 IMAC_WIDTH = 1920
 IMAC_HEIGHT = 1200
 
+LENOVO_WIDTH = 1536
+LENOVO_HEIGHT = 864
+
 EDGE_THRESHOLD = 5
 
+# Intervalle maximum avant d'envoyer les mouvements accumulés.
+# 0.002 = 2 ms.
+MOUSE_FLUSH_INTERVAL = 0.002
+
+# Vérification de la position du curseur iMac.
+# On ne lance PAS xdotool à chaque événement.
+EDGE_CHECK_INTERVAL = 0.015
+
+
 ACTIVE_MACHINE = "IMAC"
+
+
+# ============================================================
+# ÉTAT PERFORMANCE
+# ============================================================
+
+last_edge_check = 0.0
+last_mouse_flush = 0.0
+
+pending_x = 0
+pending_y = 0
+pending_wheel = 0
 
 
 # ============================================================
@@ -19,8 +49,41 @@ ACTIVE_MACHINE = "IMAC"
 # ============================================================
 
 def send_message(connection, message):
+
     connection.sendall(
         (message + "\n").encode("utf-8")
+    )
+
+
+def send_mouse_move(
+    connection,
+    dx,
+    dy
+):
+
+    if dx == 0 and dy == 0:
+        return
+
+    connection.sendall(
+        "M:XY:{}:{}\n".format(
+            dx,
+            dy
+        ).encode("utf-8")
+    )
+
+
+def send_mouse_wheel(
+    connection,
+    value
+):
+
+    if value == 0:
+        return
+
+    connection.sendall(
+        "M:W:{}\n".format(
+            value
+        ).encode("utf-8")
     )
 
 
@@ -31,43 +94,61 @@ def send_message(connection, message):
 def get_mouse_position():
 
     result = subprocess.check_output(
-        ["xdotool", "getmouselocation", "--shell"]
+        [
+            "xdotool",
+            "getmouselocation",
+            "--shell"
+        ]
     ).decode("utf-8")
 
     position = {}
 
     for line in result.splitlines():
 
-        if "=" in line:
+        if "=" not in line:
+            continue
 
-            key, value = line.split("=", 1)
+        key, value = line.split(
+            "=",
+            1
+        )
 
-            position[key] = int(value)
+        position[key] = int(value)
 
-    return position["X"], position["Y"]
+    return (
+        position["X"],
+        position["Y"]
+    )
 
 
 def move_local_mouse(x, y):
 
-    subprocess.call([
-        "xdotool",
-        "mousemove",
-        str(int(x)),
-        str(int(y))
-    ])
+    subprocess.call(
+        [
+            "xdotool",
+            "mousemove",
+            str(int(x)),
+            str(int(y))
+        ]
+    )
 
 
 # ============================================================
 # CAPTURE DES PÉRIPHÉRIQUES
 # ============================================================
 
-def grab_devices(keyboard, mouse):
+def grab_devices(
+    keyboard,
+    mouse
+):
 
     try:
 
         keyboard.grab()
 
-        print("Clavier iMac capturé.")
+        print(
+            "Clavier iMac capturé."
+        )
 
     except Exception as error:
 
@@ -80,7 +161,9 @@ def grab_devices(keyboard, mouse):
 
         mouse.grab()
 
-        print("Souris iMac capturée.")
+        print(
+            "Souris iMac capturée."
+        )
 
     except Exception as error:
 
@@ -90,13 +173,18 @@ def grab_devices(keyboard, mouse):
         )
 
 
-def ungrab_devices(keyboard, mouse):
+def ungrab_devices(
+    keyboard,
+    mouse
+):
 
     try:
 
         keyboard.ungrab()
 
-        print("Clavier iMac libéré.")
+        print(
+            "Clavier iMac libéré."
+        )
 
     except Exception as error:
 
@@ -109,7 +197,9 @@ def ungrab_devices(keyboard, mouse):
 
         mouse.ungrab()
 
-        print("Souris iMac libérée.")
+        print(
+            "Souris iMac libérée."
+        )
 
     except Exception as error:
 
@@ -117,6 +207,80 @@ def ungrab_devices(keyboard, mouse):
             "Impossible de libérer la souris :",
             error
         )
+
+
+# ============================================================
+# RESET MOUVEMENTS
+# ============================================================
+
+def reset_pending_mouse():
+
+    global pending_x
+    global pending_y
+    global pending_wheel
+
+    pending_x = 0
+    pending_y = 0
+    pending_wheel = 0
+
+
+# ============================================================
+# ENVOI MOUVEMENTS ACCUMULÉS
+# ============================================================
+
+def flush_mouse(
+    connection,
+    force=False
+):
+
+    global pending_x
+    global pending_y
+    global pending_wheel
+    global last_mouse_flush
+
+    now = time.monotonic()
+
+    if not force:
+
+        if (
+            now - last_mouse_flush
+            < MOUSE_FLUSH_INTERVAL
+        ):
+
+            return
+
+    # --------------------------------------------------------
+    # XY
+    # --------------------------------------------------------
+
+    if (
+        pending_x != 0
+        or pending_y != 0
+    ):
+
+        send_mouse_move(
+            connection,
+            pending_x,
+            pending_y
+        )
+
+        pending_x = 0
+        pending_y = 0
+
+    # --------------------------------------------------------
+    # MOLETTE
+    # --------------------------------------------------------
+
+    if pending_wheel != 0:
+
+        send_mouse_wheel(
+            connection,
+            pending_wheel
+        )
+
+        pending_wheel = 0
+
+    last_mouse_flush = now
 
 
 # ============================================================
@@ -140,13 +304,17 @@ def switch_to_lenovo(
     print(">>> PASSAGE VERS LENOVO")
     print("================================")
 
-    # Capture du clavier et de la souris.
+    # Évite qu'un ancien mouvement
+    # soit envoyé après le changement.
+    reset_pending_mouse()
+
     grab_devices(
         keyboard,
         mouse
     )
 
-    # Le curseur iMac reste au bord droit.
+    # Positionne le curseur iMac
+    # au bord droit.
     move_local_mouse(
         IMAC_WIDTH - 1,
         y
@@ -154,13 +322,14 @@ def switch_to_lenovo(
 
     ACTIVE_MACHINE = "LENOVO"
 
-    # Envoi de la position Y au Lenovo.
     send_message(
         connection,
         "SWITCH:LENOVO:{}".format(y)
     )
 
-    print("Machine active : LENOVO")
+    print(
+        "Machine active : LENOVO"
+    )
 
 
 # ============================================================
@@ -183,15 +352,13 @@ def switch_to_imac(
     print(">>> RETOUR VERS IMAC")
     print("================================")
 
-    # Place le curseur iMac au bord droit
-    # avant de rendre le contrôle à GNOME.
+    reset_pending_mouse()
+
     move_local_mouse(
         IMAC_WIDTH - 2,
         y
     )
 
-    # Très important :
-    # GNOME récupère à nouveau les périphériques.
     ungrab_devices(
         keyboard,
         mouse
@@ -199,7 +366,9 @@ def switch_to_imac(
 
     ACTIVE_MACHINE = "IMAC"
 
-    print("Machine active : IMAC")
+    print(
+        "Machine active : IMAC"
+    )
 
 
 # ============================================================
@@ -219,49 +388,41 @@ def process_server_message(
 
     try:
 
-        # ========================================================
+        # ====================================================
         # SWITCH
-        # ========================================================
+        # ====================================================
 
-        if parts[0] == "SWITCH":
+        if parts[0] != "SWITCH":
+            return
 
-            # ----------------------------------------------------
-            # LENOVO → iMAC
-            # ----------------------------------------------------
+        if (
+            len(parts) >= 2
+            and parts[1] == "IMAC"
+        ):
 
-            if (
-                len(parts) >= 2
-                and parts[1] == "IMAC"
-            ):
+            if len(parts) >= 3:
 
-                if len(parts) >= 3:
-
-                    y_lenovo = int(
-                        parts[2]
-                    )
-
-                    # Conversion :
-                    #
-                    # Lenovo : 864 px
-                    # iMac   : 1200 px
-
-                    y_imac = int(
-                        y_lenovo
-                        * (IMAC_HEIGHT - 1)
-                        / (864 - 1)
-                    )
-
-                else:
-
-                    y_imac = IMAC_HEIGHT // 2
-
-                switch_to_imac(
-                    keyboard,
-                    mouse,
-                    y_imac
+                y_lenovo = int(
+                    parts[2]
                 )
 
-            return
+                y_imac = int(
+                    y_lenovo
+                    * (IMAC_HEIGHT - 1)
+                    / (LENOVO_HEIGHT - 1)
+                )
+
+            else:
+
+                y_imac = (
+                    IMAC_HEIGHT // 2
+                )
+
+            switch_to_imac(
+                keyboard,
+                mouse,
+                y_imac
+            )
 
     except (
         ValueError,
@@ -282,6 +443,8 @@ def process_server_message(
 def start_input_listener(connection):
 
     global ACTIVE_MACHINE
+    global last_edge_check
+    global last_mouse_flush
 
     keyboard = InputDevice(
         KEYBOARD_DEVICE
@@ -296,17 +459,49 @@ def start_input_listener(connection):
     print("     KEYBOARD + MOUSE SHARE")
     print("================================")
     print("")
-    print("Clavier : {}".format(
-        keyboard.name
-    ))
-    print("Souris  : {}".format(
-        mouse.name
-    ))
+    print(
+        "Clavier : {}".format(
+            keyboard.name
+        )
+    )
+    print(
+        "Souris  : {}".format(
+            mouse.name
+        )
+    )
     print("")
-    print("iMac   : 1920 x 1200")
-    print("Lenovo : 1536 x 864")
+    print(
+        "iMac   : {} x {}".format(
+            IMAC_WIDTH,
+            IMAC_HEIGHT
+        )
+    )
+    print(
+        "Lenovo : {} x {}".format(
+            LENOVO_WIDTH,
+            LENOVO_HEIGHT
+        )
+    )
     print("")
-    print("Machine active : IMAC")
+    print(
+        "Machine active : IMAC"
+    )
+    print("")
+    print(
+        "Optimisations souris :"
+    )
+    print(
+        "  - TCP_NODELAY"
+    )
+    print(
+        "  - mouvements XY groupés"
+    )
+    print(
+        "  - buffer 2 ms"
+    )
+    print(
+        "  - xdotool limité"
+    )
     print("================================")
     print("")
 
@@ -315,35 +510,33 @@ def start_input_listener(connection):
         mouse
     ]
 
-    # Buffer pour les messages Lenovo.
     server_buffer = ""
+
+    last_edge_check = time.monotonic()
+    last_mouse_flush = time.monotonic()
 
     while True:
 
-        # On écoute simultanément :
-        #
-        # - clavier
-        # - souris
-        # - socket réseau
-        #
-        # C'est ce qui permet au Lenovo
-        # de demander le retour vers l'iMac.
+        # ====================================================
+        # SELECT
+        # ====================================================
 
         readable, _, _ = select.select(
             devices + [connection],
             [],
-            []
+            [],
+            MOUSE_FLUSH_INTERVAL
         )
 
-        mouse_x = 0
-        mouse_y = 0
-        mouse_wheel = 0
+        # ====================================================
+        # TRAITEMENT DES ÉVÉNEMENTS
+        # ====================================================
 
         for device in readable:
 
-            # ====================================================
-            # MESSAGE RÉSEAU
-            # ====================================================
+            # =================================================
+            # RÉSEAU
+            # =================================================
 
             if device == connection:
 
@@ -380,25 +573,22 @@ def start_input_listener(connection):
 
                 continue
 
-            # ====================================================
-            # ÉVÉNEMENTS PÉRIPHÉRIQUE
-            # ====================================================
+            # =================================================
+            # PÉRIPHÉRIQUE
+            # =================================================
 
             events = device.read()
 
             for event in events:
 
-                # =================================================
+                # =============================================
                 # CLAVIER
-                # =================================================
+                # =============================================
 
                 if device == keyboard:
 
                     if event.type != ecodes.EV_KEY:
                         continue
-
-                    # Le clavier n'est envoyé au Lenovo
-                    # que lorsque Lenovo est actif.
 
                     if ACTIVE_MACHINE == "LENOVO":
 
@@ -410,30 +600,38 @@ def start_input_listener(connection):
                             )
                         )
 
-                # =================================================
+                # =============================================
                 # SOURIS
-                # =================================================
+                # =============================================
 
                 elif device == mouse:
 
+                    # -----------------------------------------
+                    # MOUVEMENT
+                    # -----------------------------------------
+
                     if event.type == ecodes.EV_REL:
+
+                        if ACTIVE_MACHINE != "LENOVO":
+                            continue
 
                         if event.code == ecodes.REL_X:
 
-                            mouse_x += event.value
+                            pending_x += event.value
 
                         elif event.code == ecodes.REL_Y:
 
-                            mouse_y += event.value
+                            pending_y += event.value
 
                         elif event.code == ecodes.REL_WHEEL:
 
-                            mouse_wheel += event.value
+                            pending_wheel += event.value
+
+                    # -----------------------------------------
+                    # CLIC
+                    # -----------------------------------------
 
                     elif event.type == ecodes.EV_KEY:
-
-                        # Les clics ne sont envoyés
-                        # que lorsque Lenovo est actif.
 
                         if ACTIVE_MACHINE != "LENOVO":
                             continue
@@ -465,61 +663,55 @@ def start_input_listener(connection):
                                 )
                             )
 
-        # ========================================================
-        # MOUVEMENTS → LENOVO
-        # ========================================================
+        # ====================================================
+        # ENVOI DES MOUVEMENTS
+        # ====================================================
 
         if ACTIVE_MACHINE == "LENOVO":
 
-            if mouse_x != 0:
+            flush_mouse(
+                connection
+            )
 
-                send_message(
-                    connection,
-                    "M:X:{}".format(
-                        mouse_x
-                    )
-                )
+        else:
 
-            if mouse_y != 0:
+            reset_pending_mouse()
 
-                send_message(
-                    connection,
-                    "M:Y:{}".format(
-                        mouse_y
-                    )
-                )
-
-            if mouse_wheel != 0:
-
-                send_message(
-                    connection,
-                    "M:W:{}".format(
-                        mouse_wheel
-                    )
-                )
-
-        # ========================================================
-        # DÉTECTION BORD DROIT iMAC
-        # ========================================================
+        # ====================================================
+        # DÉTECTION BORD DROIT
+        # ====================================================
 
         if ACTIVE_MACHINE == "IMAC":
 
-            try:
+            now = time.monotonic()
 
-                x, y = get_mouse_position()
+            if (
+                now - last_edge_check
+                >= EDGE_CHECK_INTERVAL
+            ):
 
-                if x >= IMAC_WIDTH - EDGE_THRESHOLD:
+                last_edge_check = now
 
-                    switch_to_lenovo(
-                        connection,
-                        keyboard,
-                        mouse,
-                        y
+                try:
+
+                    x, y = get_mouse_position()
+
+                    if (
+                        x
+                        >= IMAC_WIDTH
+                        - EDGE_THRESHOLD
+                    ):
+
+                        switch_to_lenovo(
+                            connection,
+                            keyboard,
+                            mouse,
+                            y
+                        )
+
+                except Exception as error:
+
+                    print(
+                        "Erreur position souris :",
+                        error
                     )
-
-            except Exception as error:
-
-                print(
-                    "Erreur position souris :",
-                    error
-                )

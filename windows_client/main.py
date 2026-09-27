@@ -6,6 +6,7 @@ from input_injector import (
 
 from mouse_injector import (
     handle_mouse,
+    handle_mouse_xy,
     handle_click,
     move_to,
     get_position
@@ -15,8 +16,15 @@ import threading
 import time
 
 
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
 LENOVO_WIDTH = 1536
 LENOVO_HEIGHT = 864
+
+IMAC_HEIGHT = 1200
+
 
 ACTIVE_MACHINE = False
 
@@ -25,7 +33,9 @@ ACTIVE_MACHINE = False
 # LENOVO → iMAC
 # ============================================================
 
-def send_switch_to_imac(client):
+def send_switch_to_imac(
+    client
+):
 
     global ACTIVE_MACHINE
 
@@ -42,7 +52,6 @@ def send_switch_to_imac(client):
         print(">>> RETOUR VERS IMAC")
         print("================================")
 
-        # Envoie la position Y du curseur Lenovo.
         client.sendall(
             "SWITCH:IMAC:{}\n".format(
                 y
@@ -51,8 +60,7 @@ def send_switch_to_imac(client):
 
         ACTIVE_MACHINE = False
 
-        # On éloigne légèrement le curseur
-        # du bord gauche pour éviter une répétition.
+        # On éloigne le curseur du bord.
         move_to(
             5,
             y
@@ -67,21 +75,20 @@ def send_switch_to_imac(client):
 
 
 # ============================================================
-# SURVEILLANCE DU BORD GAUCHE
+# SURVEILLANCE BORD GAUCHE
 # ============================================================
 
-def monitor_mouse_edge(client):
+def monitor_mouse_edge(
+    client
+):
 
     global ACTIVE_MACHINE
 
     while True:
 
         time.sleep(
-            0.01
+            0.005
         )
-
-        # Le Lenovo n'est surveillé
-        # que lorsqu'il est actif.
 
         if not ACTIVE_MACHINE:
             continue
@@ -119,14 +126,16 @@ def main():
     client = connect_to_server()
 
     print("")
-    print("Le Lenovo est connecté à l'iMac.")
-    print("En attente du passage de la souris...")
+    print(
+        "Le Lenovo est connecté à l'iMac."
+    )
+    print(
+        "Mode souris haute performance."
+    )
     print("")
 
-    buffer = ""
-
     # ========================================================
-    # THREAD SURVEILLANCE BORD GAUCHE
+    # THREAD BORD GAUCHE
     # ========================================================
 
     edge_thread = threading.Thread(
@@ -138,8 +147,10 @@ def main():
     edge_thread.start()
 
     # ========================================================
-    # RÉCEPTION RÉSEAU
+    # RÉCEPTION
     # ========================================================
+
+    buffer = ""
 
     while True:
 
@@ -176,14 +187,10 @@ def main():
             try:
 
                 # =================================================
-                # CHANGEMENT DE MACHINE
+                # SWITCH
                 # =================================================
 
                 if parts[0] == "SWITCH":
-
-                    # ---------------------------------------------
-                    # iMAC → LENOVO
-                    # ---------------------------------------------
 
                     if (
                         len(parts) >= 2
@@ -196,15 +203,10 @@ def main():
                                 parts[2]
                             )
 
-                            # Conversion :
-                            #
-                            # iMac 1200 px
-                            # Lenovo 864 px
-
                             y_lenovo = int(
                                 y_imac
                                 * (LENOVO_HEIGHT - 1)
-                                / (1200 - 1)
+                                / (IMAC_HEIGHT - 1)
                             )
 
                         else:
@@ -217,7 +219,6 @@ def main():
                             ">>> PASSAGE LENOVO"
                         )
 
-                        # Curseur au bord gauche.
                         move_to(
                             5,
                             y_lenovo
@@ -232,10 +233,6 @@ def main():
                 # =================================================
 
                 if parts[0] == "K":
-
-                    # Sécurité :
-                    # on ignore le clavier si Lenovo
-                    # n'est pas la machine active.
 
                     if not ACTIVE_MACHINE:
                         continue
@@ -264,26 +261,53 @@ def main():
 
                     action = parts[1]
 
-                    value = int(
-                        parts[2]
-                    )
+                    # ---------------------------------------------
+                    # XY GROUPÉ
+                    # ---------------------------------------------
 
-                    if action in (
-                        "X",
-                        "Y",
-                        "W"
-                    ):
+                    if action == "XY":
+
+                        dx = int(
+                            parts[2]
+                        )
+
+                        dy = int(
+                            parts[3]
+                        )
+
+                        handle_mouse_xy(
+                            dx,
+                            dy
+                        )
+
+                    # ---------------------------------------------
+                    # MOLETTE
+                    # ---------------------------------------------
+
+                    elif action == "W":
+
+                        value = int(
+                            parts[2]
+                        )
 
                         handle_mouse(
-                            action,
+                            "W",
                             value
                         )
+
+                    # ---------------------------------------------
+                    # CLICS
+                    # ---------------------------------------------
 
                     elif action in (
                         "L",
                         "R",
                         "C"
                     ):
+
+                        value = int(
+                            parts[2]
+                        )
 
                         handle_click(
                             action,

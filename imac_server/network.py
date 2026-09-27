@@ -6,7 +6,11 @@ PORT = 24800
 
 
 def start_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    server = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_STREAM
+    )
 
     server.setsockopt(
         socket.SOL_SOCKET,
@@ -14,7 +18,10 @@ def start_server():
         1
     )
 
-    server.bind((HOST, PORT))
+    server.bind(
+        (HOST, PORT)
+    )
+
     server.listen(1)
 
     print("================================")
@@ -25,6 +32,17 @@ def start_server():
 
     connection, address = server.accept()
 
+    # ========================================================
+    # TCP LOW LATENCY
+    # ========================================================
+
+    connection.setsockopt(
+        socket.IPPROTO_TCP,
+        socket.TCP_NODELAY,
+        1
+    )
+
     print("Connexion reçue depuis : {}".format(address))
+    print("TCP_NODELAY activé.")
 
     return server, connection
