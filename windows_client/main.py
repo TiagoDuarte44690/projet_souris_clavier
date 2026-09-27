@@ -1,4 +1,34 @@
-from network import connect_to_server
+import os
+import sys
+import threading
+import time
+
+
+# ============================================================
+# RACINE DU PROJET
+# ============================================================
+
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(
+        0,
+        PROJECT_ROOT
+    )
+
+
+# ============================================================
+# IMPORTS
+# ============================================================
+
+from network import (
+    connect_to_server,
+    send_line
+)
 
 from input_injector import (
     handle_key
@@ -12,8 +42,10 @@ from mouse_injector import (
     get_position
 )
 
-import threading
-import time
+from shared.clipboard import (
+    start_clipboard_watcher,
+    receive_clipboard
+)
 
 
 # ============================================================
@@ -52,15 +84,19 @@ def send_switch_to_imac(
         print(">>> RETOUR VERS IMAC")
         print("================================")
 
-        client.sendall(
-            "SWITCH:IMAC:{}\n".format(
+        send_line(
+            client,
+            "SWITCH:IMAC:{}".format(
                 y
-            ).encode("utf-8")
+            )
         )
 
         ACTIVE_MACHINE = False
 
+        # ----------------------------------------------------
         # On éloigne le curseur du bord.
+        # ----------------------------------------------------
+
         move_to(
             5,
             y
@@ -135,6 +171,15 @@ def main():
     print("")
 
     # ========================================================
+    # PRESSE-PAPIER
+    # ========================================================
+
+    start_clipboard_watcher(
+        client,
+        send_line
+    )
+
+    # ========================================================
     # THREAD BORD GAUCHE
     # ========================================================
 
@@ -182,9 +227,51 @@ def main():
             if not line:
                 continue
 
-            parts = line.split(":")
-
             try:
+
+                # =================================================
+                # PRESSE-PAPIER
+                #
+                # IMPORTANT :
+                # Le presse-papier fonctionne indépendamment
+                # de ACTIVE_MACHINE.
+                # =================================================
+
+                if line.startswith("CLIP:"):
+
+                    clip_parts = line.split(
+                        ":",
+                        2
+                    )
+
+                    if len(clip_parts) == 3:
+
+                        clipboard_type = (
+                            clip_parts[1]
+                        )
+
+                        encoded_data = (
+                            clip_parts[2]
+                        )
+
+                        print(
+                            "[CLIPBOARD] {} reçu.".format(
+                                clipboard_type
+                            )
+                        )
+
+                        receive_clipboard(
+                            clipboard_type,
+                            encoded_data
+                        )
+
+                    continue
+
+                # =================================================
+                # AUTRES MESSAGES
+                # =================================================
+
+                parts = line.split(":")
 
                 # =================================================
                 # SWITCH

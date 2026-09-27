@@ -1,9 +1,25 @@
 import socket
+import threading
 
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
 SERVER_HOST = "192.168.1.188"
 SERVER_PORT = 24800
 
+
+# ============================================================
+# VERROU D'ENVOI
+# ============================================================
+
+SEND_LOCK = threading.Lock()
+
+
+# ============================================================
+# CONNEXION
+# ============================================================
 
 def connect_to_server():
 
@@ -12,10 +28,6 @@ def connect_to_server():
         socket.SOCK_STREAM
     )
 
-    # ========================================================
-    # TCP LOW LATENCY
-    # ========================================================
-
     client.setsockopt(
         socket.IPPROTO_TCP,
         socket.TCP_NODELAY,
@@ -23,7 +35,7 @@ def connect_to_server():
     )
 
     print(
-        "Connexion à {}:{}...".format(
+        "Connexion à l'iMac {}:{}...".format(
             SERVER_HOST,
             SERVER_PORT
         )
@@ -37,7 +49,7 @@ def connect_to_server():
     )
 
     print(
-        "Connexion établie."
+        "Connexion TCP établie."
     )
 
     print(
@@ -45,3 +57,25 @@ def connect_to_server():
     )
 
     return client
+
+
+# ============================================================
+# ENVOI D'UNE LIGNE
+# ============================================================
+
+def send_line(
+    connection,
+    message
+):
+
+    data = (
+        message + "\n"
+    ).encode(
+        "utf-8"
+    )
+
+    with SEND_LOCK:
+
+        connection.sendall(
+            data
+        )
