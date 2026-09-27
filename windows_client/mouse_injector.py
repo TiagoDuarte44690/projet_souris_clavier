@@ -128,25 +128,17 @@ def _send_mouse_input(
 # MOUVEMENT
 # ============================================================
 
-MOUSE_SPEED = 2.0
-
-
 def handle_mouse_xy(
     dx,
     dy
 ):
 
-    dx = int(dx * MOUSE_SPEED)
-    dy = int(dy * MOUSE_SPEED)
-
-    if dx == 0 and dy == 0:
-        return
-
     _send_mouse_input(
-        dx=dx,
-        dy=dy,
+        dx=int(dx),
+        dy=int(dy),
         flags=MOUSEEVENTF_MOVE
     )
+
 
 def handle_mouse(
     axis,
