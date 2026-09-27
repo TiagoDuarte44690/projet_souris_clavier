@@ -263,6 +263,10 @@ def _windows_clipboard_changed():
 # WINDOWS : LECTURE TEXTE
 # ============================================================
 
+# ============================================================
+# WINDOWS : LECTURE TEXTE
+# ============================================================
+
 def _windows_get_text():
 
     script = r"""
@@ -288,7 +292,6 @@ if ([System.Windows.Forms.Clipboard]::ContainsText()) {
                 "-Command",
                 script
             ],
-            stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=CREATE_NO_WINDOW
         )
@@ -302,7 +305,6 @@ if ([System.Windows.Forms.Clipboard]::ContainsText()) {
     except Exception:
 
         return None
-
 
 # ============================================================
 # WINDOWS : LECTURE IMAGE
