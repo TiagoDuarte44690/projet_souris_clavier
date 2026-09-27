@@ -30,7 +30,7 @@ from network import (
     send_line
 )
 
-from input_injector import (
+from windows_client.input_injector import (
     handle_key
 )
 
