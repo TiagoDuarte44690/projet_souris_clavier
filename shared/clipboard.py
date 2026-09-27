@@ -12,7 +12,7 @@ import time
 # CONFIGURATION
 # ============================================================
 
-POLL_INTERVAL = 0.25
+POLL_INTERVAL = 0.50
 
 MAX_CLIPBOARD_SIZE = 50 * 1024 * 1024
 
@@ -25,9 +25,18 @@ SYSTEM = platform.system()
 
 _last_local_hash = None
 
-_last_remote_hash = None
+# Hash du dernier contenu reçu depuis l'autre machine.
+#
+# Il sert uniquement à empêcher un effet miroir :
+#
+# iMac → Lenovo → iMac → Lenovo → ...
+#
+_ignore_next_hash = None
 
-_lock = threading.Lock()
+# Windows possède un compteur natif du presse-papier.
+# Cela permet d'éviter de lancer PowerShell toutes les
+# 0,5 seconde lorsque rien n'a changé.
+_last_windows_sequence = None
 
 
 # ============================================================
@@ -61,6 +70,10 @@ def _linux_get_text():
             stderr=subprocess.DEVNULL
         )
 
+        if not result:
+
+            return None
+
         return result
 
     except Exception:
@@ -85,9 +98,11 @@ def _linux_get_image():
         )
 
         if not result:
+
             return None
 
         if len(result) > MAX_CLIPBOARD_SIZE:
+
             print(
                 "[CLIPBOARD] Image trop volumineuse : {} Mo".format(
                     round(
@@ -178,13 +193,50 @@ def _linux_set_image(data):
 # WINDOWS
 # ============================================================
 
+def _windows_clipboard_changed():
+
+    global _last_windows_sequence
+
+    try:
+
+        import ctypes
+
+        user32 = ctypes.windll.user32
+
+        sequence = user32.GetClipboardSequenceNumber()
+
+        if sequence == 0:
+
+            return True
+
+        if sequence == _last_windows_sequence:
+
+            return False
+
+        _last_windows_sequence = sequence
+
+        return True
+
+    except Exception:
+
+        # Si l'API Windows n'est pas disponible,
+        # on laisse la surveillance fonctionner normalement.
+        return True
+
+
+# ============================================================
+# WINDOWS : LECTURE TEXTE
+# ============================================================
+
 def _windows_get_text():
 
     script = r"""
 Add-Type -AssemblyName System.Windows.Forms
 
 if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
     [System.Windows.Forms.Clipboard]::GetText()
 }
 """
@@ -205,6 +257,7 @@ if ([System.Windows.Forms.Clipboard]::ContainsText()) {
         )
 
         if not result:
+
             return None
 
         return result
@@ -213,6 +266,10 @@ if ([System.Windows.Forms.Clipboard]::ContainsText()) {
 
         return None
 
+
+# ============================================================
+# WINDOWS : LECTURE IMAGE
+# ============================================================
 
 def _windows_get_image():
 
@@ -232,25 +289,36 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
     if ($null -ne $image) {
 
         $image.Save(
-            "{0}",
+            "__CLIPBOARD_TEMP_PATH__",
             [System.Drawing.Imaging.ImageFormat]::Png
         )
 
         $image.Dispose()
     }
 }
-""".format(
-        temp_path.replace(
-            "\\",
-            "\\\\"
-        )
+"""
+
+    # --------------------------------------------------------
+    # IMPORTANT
+    #
+    # On ne fait PAS .format(...) ici.
+    #
+    # Le script PowerShell contient lui-même des accolades.
+    # On remplace uniquement notre marqueur.
+    # --------------------------------------------------------
+
+    script = script.replace(
+        "__CLIPBOARD_TEMP_PATH__",
+        temp_path
     )
 
     try:
 
         if os.path.exists(temp_path):
 
-            os.remove(temp_path)
+            os.remove(
+                temp_path
+            )
 
         subprocess.call(
             [
@@ -267,6 +335,7 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
         )
 
         if not os.path.exists(temp_path):
+
             return None
 
         with open(
@@ -283,20 +352,48 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
             )
 
         except Exception:
+
             pass
 
         if not data:
+
             return None
 
         if len(data) > MAX_CLIPBOARD_SIZE:
+
+            print(
+                "[CLIPBOARD] Image Windows trop volumineuse."
+            )
+
             return None
 
         return data
 
-    except Exception:
+    except Exception as error:
+
+        print(
+            "[CLIPBOARD] Erreur lecture image Windows :",
+            error
+        )
+
+        try:
+
+            if os.path.exists(temp_path):
+
+                os.remove(
+                    temp_path
+                )
+
+        except Exception:
+
+            pass
 
         return None
 
+
+# ============================================================
+# WINDOWS : ÉCRITURE TEXTE
+# ============================================================
 
 def _windows_set_text(data):
 
@@ -312,27 +409,34 @@ def _windows_set_text(data):
             "wb"
         ) as file:
 
-            file.write(data)
+            file.write(
+                data
+            )
 
         script = r"""
 Add-Type -AssemblyName System.Windows.Forms
 
 $text = [System.IO.File]::ReadAllText(
-    "{0}",
+    "__CLIPBOARD_TEMP_PATH__",
     [System.Text.Encoding]::UTF8
 )
 
 [System.Windows.Forms.Clipboard]::SetText(
     $text
 )
-""".format(
-            temp_path.replace(
-                "\\",
-                "\\\\"
-            )
+"""
+
+        # ----------------------------------------------------
+        # Même principe :
+        # surtout pas de .format(...)
+        # ----------------------------------------------------
+
+        script = script.replace(
+            "__CLIPBOARD_TEMP_PATH__",
+            temp_path
         )
 
-        subprocess.call(
+        result = subprocess.call(
             [
                 "powershell",
                 "-NoProfile",
@@ -353,9 +457,10 @@ $text = [System.IO.File]::ReadAllText(
             )
 
         except Exception:
+
             pass
 
-        return True
+        return result == 0
 
     except Exception as error:
 
@@ -364,8 +469,24 @@ $text = [System.IO.File]::ReadAllText(
             error
         )
 
+        try:
+
+            if os.path.exists(temp_path):
+
+                os.remove(
+                    temp_path
+                )
+
+        except Exception:
+
+            pass
+
         return False
 
+
+# ============================================================
+# WINDOWS : ÉCRITURE IMAGE
+# ============================================================
 
 def _windows_set_image(data):
 
@@ -381,14 +502,16 @@ def _windows_set_image(data):
             "wb"
         ) as file:
 
-            file.write(data)
+            file.write(
+                data
+            )
 
         script = r"""
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $image = [System.Drawing.Image]::FromFile(
-    "{0}"
+    "__CLIPBOARD_TEMP_PATH__"
 )
 
 [System.Windows.Forms.Clipboard]::SetImage(
@@ -396,14 +519,19 @@ $image = [System.Drawing.Image]::FromFile(
 )
 
 $image.Dispose()
-""".format(
-            temp_path.replace(
-                "\\",
-                "\\\\"
-            )
+"""
+
+        # ----------------------------------------------------
+        # IMPORTANT :
+        # pas de .format(...)
+        # ----------------------------------------------------
+
+        script = script.replace(
+            "__CLIPBOARD_TEMP_PATH__",
+            temp_path
         )
 
-        subprocess.call(
+        result = subprocess.call(
             [
                 "powershell",
                 "-NoProfile",
@@ -424,9 +552,10 @@ $image.Dispose()
             )
 
         except Exception:
+
             pass
 
-        return True
+        return result == 0
 
     except Exception as error:
 
@@ -434,6 +563,18 @@ $image.Dispose()
             "[CLIPBOARD] Erreur image Windows :",
             error
         )
+
+        try:
+
+            if os.path.exists(temp_path):
+
+                os.remove(
+                    temp_path
+                )
+
+        except Exception:
+
+            pass
 
         return False
 
@@ -450,7 +591,10 @@ def get_local_clipboard():
 
     if SYSTEM == "Linux":
 
+        # ----------------------------------------------------
         # On teste d'abord l'image.
+        # ----------------------------------------------------
+
         image = _linux_get_image()
 
         if image:
@@ -460,7 +604,10 @@ def get_local_clipboard():
                 image
             )
 
+        # ----------------------------------------------------
         # Puis le texte.
+        # ----------------------------------------------------
+
         text = _linux_get_text()
 
         if text:
@@ -481,6 +628,22 @@ def get_local_clipboard():
 
     if SYSTEM == "Windows":
 
+        # ----------------------------------------------------
+        # Si le presse-papier n'a pas changé, inutile de
+        # lancer PowerShell.
+        # ----------------------------------------------------
+
+        if not _windows_clipboard_changed():
+
+            return (
+                None,
+                None
+            )
+
+        # ----------------------------------------------------
+        # On teste d'abord l'image.
+        # ----------------------------------------------------
+
         image = _windows_get_image()
 
         if image:
@@ -489,6 +652,10 @@ def get_local_clipboard():
                 "IMAGE",
                 image
             )
+
+        # ----------------------------------------------------
+        # Puis le texte.
+        # ----------------------------------------------------
 
         text = _windows_get_text()
 
@@ -561,6 +728,22 @@ def send_clipboard(
     send_function
 ):
 
+    # --------------------------------------------------------
+    # Protection taille
+    # --------------------------------------------------------
+
+    if len(data) > MAX_CLIPBOARD_SIZE:
+
+        print(
+            "[CLIPBOARD] Donnée trop volumineuse."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Conversion en Base64
+    # --------------------------------------------------------
+
     encoded = base64.b64encode(
         data
     ).decode(
@@ -574,6 +757,11 @@ def send_clipboard(
             encoded
         )
     )
+
+    # --------------------------------------------------------
+    # Le verrou d'envoi est géré par send_function
+    # (send_line côté réseau).
+    # --------------------------------------------------------
 
     send_function(
         connection,
@@ -591,7 +779,7 @@ def clipboard_watcher(
 ):
 
     global _last_local_hash
-    global _last_remote_hash
+    global _ignore_next_hash
 
     print(
         "[CLIPBOARD] Surveillance activée."
@@ -615,37 +803,44 @@ def clipboard_watcher(
                 )
 
                 # ------------------------------------------------
-                # Nouveau contenu local
+                # CONTENU QUI VIENT D'ÊTRE REÇU
+                #
+                # On le laisse dans le presse-papier local,
+                # mais on ne le renvoie pas immédiatement.
                 # ------------------------------------------------
 
-                if current_hash != _last_local_hash:
+                if (
+                    _ignore_next_hash is not None
+                    and current_hash == _ignore_next_hash
+                ):
 
-                    # Si ce contenu vient d'être reçu
-                    # de l'autre machine, on ne le renvoie
-                    # surtout pas.
-                    if current_hash == _last_remote_hash:
+                    _last_local_hash = current_hash
 
-                        _last_local_hash = current_hash
+                    _ignore_next_hash = None
 
-                    else:
+                # ------------------------------------------------
+                # NOUVEAU CONTENU LOCAL
+                # ------------------------------------------------
 
-                        print(
-                            "[CLIPBOARD] Nouveau {} local."
-                            .format(
-                                clipboard_type
-                            )
+                elif current_hash != _last_local_hash:
+
+                    print(
+                        "[CLIPBOARD] Nouveau {} local."
+                        .format(
+                            clipboard_type
                         )
+                    )
 
-                        send_clipboard(
-                            connection,
-                            clipboard_type,
-                            data,
-                            send_function
-                        )
+                    send_clipboard(
+                        connection,
+                        clipboard_type,
+                        data,
+                        send_function
+                    )
 
-                        _last_local_hash = (
-                            current_hash
-                        )
+                    _last_local_hash = (
+                        current_hash
+                    )
 
         except Exception as error:
 
@@ -668,14 +863,46 @@ def receive_clipboard(
     encoded_data
 ):
 
-    global _last_remote_hash
+    global _ignore_next_hash
     global _last_local_hash
 
     try:
 
+        # ----------------------------------------------------
+        # Vérification du type
+        # ----------------------------------------------------
+
+        if clipboard_type not in (
+            "TEXT",
+            "IMAGE"
+        ):
+
+            print(
+                "[CLIPBOARD] Type inconnu :",
+                clipboard_type
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # Décodage Base64
+        # ----------------------------------------------------
+
         data = base64.b64decode(
             encoded_data
         )
+
+        if not data:
+
+            print(
+                "[CLIPBOARD] Donnée vide reçue."
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # Protection taille
+        # ----------------------------------------------------
 
         if len(data) > MAX_CLIPBOARD_SIZE:
 
@@ -685,20 +912,33 @@ def receive_clipboard(
 
             return
 
+        # ----------------------------------------------------
+        # Hash
+        # ----------------------------------------------------
+
         current_hash = _hash_data(
             data
         )
 
-        _last_remote_hash = current_hash
+        # ----------------------------------------------------
+        # Écriture dans le presse-papier local
+        # ----------------------------------------------------
 
-        if set_local_clipboard(
+        success = set_local_clipboard(
             clipboard_type,
             data
-        ):
+        )
 
-            _last_local_hash = (
-                current_hash
-            )
+        if success:
+
+            # ------------------------------------------------
+            # On indique au watcher que ce contenu vient du
+            # réseau et ne doit donc pas repartir.
+            # ------------------------------------------------
+
+            _ignore_next_hash = current_hash
+
+            _last_local_hash = current_hash
 
             print(
                 "[CLIPBOARD] {} reçu."
@@ -710,7 +950,8 @@ def receive_clipboard(
         else:
 
             print(
-                "[CLIPBOARD] Impossible de définir le presse-papier."
+                "[CLIPBOARD] Impossible de définir "
+                "le presse-papier."
             )
 
     except Exception as error:
