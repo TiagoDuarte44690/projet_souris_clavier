@@ -11,7 +11,7 @@ from shared.clipboard import receive_clipboard
 # CONFIGURATION
 # ============================================================
 
-KEYBOARD_DEVICE = "/dev/input/event12"
+KEYBOARD_DEVICE = "/dev/input/event7"
 MOUSE_DEVICE = "/dev/input/event3"
 
 IMAC_WIDTH = 1920
