@@ -7,6 +7,8 @@ LENOVO_IP="192.168.1.39"
 COMMAND_PORT="24801"
 SERVER_PORT="24800"
 
+PID_FILE="$HOME/.projet_souris_clavier_server.pid"
+
 echo "================================"
 echo "   CLAVIER + SOURIS → LENOVO"
 echo "================================"
@@ -64,47 +66,79 @@ sudo python3 "$IMAC_SERVER" &
 
 SERVER_PID=$!
 
+echo "$SERVER_PID" > "$PID_FILE"
+
 echo "[OK] Serveur lancé (PID $SERVER_PID)."
 echo
 
-echo "Attente du port 24800..."
+echo "Attente du port $SERVER_PORT..."
+
+SERVER_READY=false
 
 for i in $(seq 1 30); do
 
-    python3 -c "
-import socket
-s = socket.socket()
-s.settimeout(0.2)
-try:
-    s.connect(('127.0.0.1', $SERVER_PORT))
-    s.close()
-    exit(0)
-except:
-    exit(1)
-" 2>/dev/null
-
-    if [ $? -eq 0 ]; then
+    if ss -ltn | grep -q ":$SERVER_PORT "; then
+        SERVER_READY=true
         break
     fi
 
     sleep 0.2
 done
 
+if [ "$SERVER_READY" != true ]; then
+    echo
+    echo "ERREUR : le serveur iMac n'a pas ouvert le port $SERVER_PORT."
+
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+        sudo kill "$SERVER_PID" 2>/dev/null
+    fi
+
+    rm -f "$PID_FILE"
+
+    read -p "Appuyez sur Entrée pour fermer..."
+    exit 1
+fi
+
 echo "[OK] Serveur iMac disponible."
 echo
 
 echo "[4/4] Lancement du client Lenovo..."
 
-python3 -c "
+RUNNING=$(python3 -c "
 import socket
+import sys
 
-s = socket.socket()
-s.settimeout(5)
-s.connect(('$LENOVO_IP', $COMMAND_PORT))
-s.sendall(b'RUN\n')
-print(s.recv(1024).decode().strip())
-s.close()
-"
+try:
+    s = socket.socket()
+    s.settimeout(5)
+    s.connect(('$LENOVO_IP', $COMMAND_PORT))
+    s.sendall(b'RUN\n')
+    response = s.recv(1024).decode().strip()
+    s.close()
+    print(response)
+
+    if response != 'RUNNING':
+        sys.exit(1)
+
+except Exception as e:
+    print('ERROR:' + str(e))
+    sys.exit(1)
+")
+
+if [[ "$RUNNING" != "RUNNING" ]]; then
+    echo
+    echo "ERREUR : impossible de lancer le client Lenovo."
+    echo "Réponse : $RUNNING"
+
+    if kill -0 "$SERVER_PID" 2>/dev/null; then
+        sudo kill "$SERVER_PID" 2>/dev/null
+    fi
+
+    rm -f "$PID_FILE"
+
+    read -p "Appuyez sur Entrée pour fermer..."
+    exit 1
+fi
 
 echo
 echo "================================"
