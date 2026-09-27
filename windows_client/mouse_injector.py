@@ -1,4 +1,5 @@
 import ctypes
+import ctypes.wintypes
 
 
 # ============================================================
@@ -8,8 +9,16 @@ import ctypes
 user32 = ctypes.windll.user32
 
 
+# ============================================================
+# CONSTANTES INPUT
+# ============================================================
+
 INPUT_MOUSE = 0
 
+
+# ============================================================
+# FLAGS SOURIS
+# ============================================================
 
 MOUSEEVENTF_MOVE = 0x0001
 
@@ -24,6 +33,27 @@ MOUSEEVENTF_MIDDLEUP = 0x0040
 
 MOUSEEVENTF_WHEEL = 0x0800
 
+
+# ============================================================
+# CONFIGURATION MOLETTE
+# ============================================================
+
+# Windows utilise 120 unités pour un cran de molette.
+WHEEL_DELTA = 120
+
+# Multiplicateur supplémentaire.
+#
+# 1 = vitesse Windows normale
+# 2 = deux fois plus rapide
+# 3 = trois fois plus rapide
+#
+# On commence à 1.
+SCROLL_MULTIPLIER = 1
+
+
+# ============================================================
+# TYPES WINDOWS
+# ============================================================
 
 ULONG_PTR = ctypes.c_ulonglong
 
@@ -106,9 +136,9 @@ def _send_mouse_input(
     input_event = INPUT(
         type=INPUT_MOUSE,
         mi=MOUSEINPUT(
-            dx=dx,
-            dy=dy,
-            mouseData=mouse_data,
+            dx=int(dx),
+            dy=int(dy),
+            mouseData=int(mouse_data),
             dwFlags=flags,
             time=0,
             dwExtraInfo=0
@@ -125,7 +155,7 @@ def _send_mouse_input(
 
 
 # ============================================================
-# MOUVEMENT
+# MOUVEMENT SOURIS
 # ============================================================
 
 def handle_mouse_xy(
@@ -133,12 +163,22 @@ def handle_mouse_xy(
     dy
 ):
 
+    dx = int(dx)
+    dy = int(dy)
+
+    if dx == 0 and dy == 0:
+        return
+
     _send_mouse_input(
-        dx=int(dx),
-        dy=int(dy),
+        dx=dx,
+        dy=dy,
         flags=MOUSEEVENTF_MOVE
     )
 
+
+# ============================================================
+# MOLETTE
+# ============================================================
 
 def handle_mouse(
     axis,
@@ -147,16 +187,39 @@ def handle_mouse(
 
     value = int(value)
 
-    if axis == "W":
+    if axis != "W":
+        return
 
-        _send_mouse_input(
-            mouse_data=value,
-            flags=MOUSEEVENTF_WHEEL
-        )
+    if value == 0:
+        return
+
+    # --------------------------------------------------------
+    # Linux → Windows
+    #
+    # Linux nous donne généralement :
+    #
+    #     +1 / -1
+    #
+    # Windows attend :
+    #
+    #     +120 / -120
+    #
+    # --------------------------------------------------------
+
+    scroll_amount = (
+        value
+        * WHEEL_DELTA
+        * SCROLL_MULTIPLIER
+    )
+
+    _send_mouse_input(
+        mouse_data=scroll_amount,
+        flags=MOUSEEVENTF_WHEEL
+    )
 
 
 # ============================================================
-# CLIC
+# CLICS SOURIS
 # ============================================================
 
 def handle_click(
@@ -165,6 +228,10 @@ def handle_click(
 ):
 
     value = int(value)
+
+    # ========================================================
+    # CLIC GAUCHE
+    # ========================================================
 
     if button == "L":
 
@@ -180,6 +247,10 @@ def handle_click(
                 flags=MOUSEEVENTF_LEFTUP
             )
 
+    # ========================================================
+    # CLIC DROIT
+    # ========================================================
+
     elif button == "R":
 
         if value == 1:
@@ -193,6 +264,10 @@ def handle_click(
             _send_mouse_input(
                 flags=MOUSEEVENTF_RIGHTUP
             )
+
+    # ========================================================
+    # CLIC MOLETTE
+    # ========================================================
 
     elif button == "C":
 
@@ -210,22 +285,33 @@ def handle_click(
 
 
 # ============================================================
-# POSITION CURSEUR
+# POSITION DU CURSEUR
 # ============================================================
 
 def get_position():
 
     point = ctypes.wintypes.POINT()
 
-    user32.GetCursorPos(
+    success = user32.GetCursorPos(
         ctypes.byref(point)
     )
+
+    if not success:
+
+        return (
+            0,
+            0
+        )
 
     return (
         point.x,
         point.y
     )
 
+
+# ============================================================
+# POSITIONNEMENT DU CURSEUR
+# ============================================================
 
 def move_to(
     x,
