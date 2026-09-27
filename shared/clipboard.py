@@ -24,15 +24,34 @@ SYSTEM = platform.system()
 # ============================================================
 
 if SYSTEM == "Windows":
+
     POWERSHELL = os.path.join(
-        os.environ.get("WINDIR", r"C:\Windows"),
+        os.environ.get(
+            "WINDIR",
+            r"C:\Windows"
+        ),
         "System32",
         "WindowsPowerShell",
         "v1.0",
         "powershell.exe"
     )
+
 else:
+
     POWERSHELL = "powershell"
+
+
+# ============================================================
+# WINDOWS : EXÉCUTION SANS FENÊTRE
+# ============================================================
+
+if SYSTEM == "Windows":
+
+    CREATE_NO_WINDOW = 0x08000000
+
+else:
+
+    CREATE_NO_WINDOW = 0
 
 
 # ============================================================
@@ -87,6 +106,7 @@ def _linux_get_text():
         )
 
         if not result:
+
             return None
 
         return result
@@ -113,6 +133,7 @@ def _linux_get_image():
         )
 
         if not result:
+
             return None
 
         if len(result) > MAX_CLIPBOARD_SIZE:
@@ -267,7 +288,9 @@ if ([System.Windows.Forms.Clipboard]::ContainsText()) {
                 "-Command",
                 script
             ],
-            stderr=subprocess.DEVNULL
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW
         )
 
         if not result:
@@ -345,7 +368,8 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
                 script
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW
         )
 
         if not os.path.exists(temp_path):
@@ -461,7 +485,8 @@ $text = [System.IO.File]::ReadAllText(
                 script
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW
         )
 
         try:
@@ -556,7 +581,8 @@ $image.Dispose()
                 script
             ],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW
         )
 
         try:
