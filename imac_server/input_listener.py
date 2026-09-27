@@ -4,6 +4,8 @@ import select
 import subprocess
 import time
 
+from shared.clipboard import receive_clipboard
+
 
 # ============================================================
 # CONFIGURATION
@@ -48,10 +50,17 @@ pending_wheel = 0
 # RÉSEAU
 # ============================================================
 
-def send_message(connection, message):
+def send_message(
+    connection,
+    message
+):
 
     connection.sendall(
-        (message + "\n").encode("utf-8")
+        (
+            message + "\n"
+        ).encode(
+            "utf-8"
+        )
     )
 
 
@@ -68,7 +77,9 @@ def send_mouse_move(
         "M:XY:{}:{}\n".format(
             dx,
             dy
-        ).encode("utf-8")
+        ).encode(
+            "utf-8"
+        )
     )
 
 
@@ -83,7 +94,9 @@ def send_mouse_wheel(
     connection.sendall(
         "M:W:{}\n".format(
             value
-        ).encode("utf-8")
+        ).encode(
+            "utf-8"
+        )
     )
 
 
@@ -99,7 +112,9 @@ def get_mouse_position():
             "getmouselocation",
             "--shell"
         ]
-    ).decode("utf-8")
+    ).decode(
+        "utf-8"
+    )
 
     position = {}
 
@@ -113,7 +128,9 @@ def get_mouse_position():
             1
         )
 
-        position[key] = int(value)
+        position[key] = int(
+            value
+        )
 
     return (
         position["X"],
@@ -121,7 +138,10 @@ def get_mouse_position():
     )
 
 
-def move_local_mouse(x, y):
+def move_local_mouse(
+    x,
+    y
+):
 
     subprocess.call(
         [
@@ -324,7 +344,9 @@ def switch_to_lenovo(
 
     send_message(
         connection,
-        "SWITCH:LENOVO:{}".format(y)
+        "SWITCH:LENOVO:{}".format(
+            y
+        )
     )
 
     print(
@@ -384,9 +406,78 @@ def process_server_message(
     if not line:
         return
 
-    parts = line.split(":")
-
     try:
+
+        # ====================================================
+        # PRESSE-PAPIER
+        #
+        # IMPORTANT :
+        # On traite CLIP AVANT le split classique.
+        #
+        # Format :
+        # CLIP:TEXT:base64
+        # CLIP:IMAGE:base64
+        #
+        # Le split est limité à 2 pour conserver
+        # l'intégralité du base64.
+        # ====================================================
+
+        if line.startswith(
+            "CLIP:"
+        ):
+
+            clip_parts = line.split(
+                ":",
+                2
+            )
+
+            if len(clip_parts) != 3:
+
+                print(
+                    "[CLIPBOARD] Message invalide."
+                )
+
+                return
+
+            clipboard_type = (
+                clip_parts[1]
+            )
+
+            encoded_data = (
+                clip_parts[2]
+            )
+
+            print(
+                "[CLIPBOARD] {} reçu du Lenovo.".format(
+                    clipboard_type
+                )
+            )
+
+            try:
+
+                receive_clipboard(
+                    clipboard_type,
+                    encoded_data
+                )
+
+                print(
+                    "[CLIPBOARD] Presse-papier iMac mis à jour."
+                )
+
+            except Exception as error:
+
+                print(
+                    "[CLIPBOARD] Erreur réception :",
+                    error
+                )
+
+            return
+
+        # ====================================================
+        # AUTRES MESSAGES
+        # ====================================================
+
+        parts = line.split(":")
 
         # ====================================================
         # SWITCH
@@ -440,7 +531,9 @@ def process_server_message(
 # BOUCLE PRINCIPALE
 # ============================================================
 
-def start_input_listener(connection):
+def start_input_listener(
+    connection
+):
 
     global ACTIVE_MACHINE
     global last_edge_check
