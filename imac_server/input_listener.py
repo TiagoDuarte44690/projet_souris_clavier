@@ -446,6 +446,10 @@ def start_input_listener(connection):
     global last_edge_check
     global last_mouse_flush
 
+    global pending_x
+    global pending_y
+    global pending_wheel
+
     keyboard = InputDevice(
         KEYBOARD_DEVICE
     )
