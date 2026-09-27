@@ -20,6 +20,22 @@ SYSTEM = platform.system()
 
 
 # ============================================================
+# CHEMIN POWERSHELL WINDOWS
+# ============================================================
+
+if SYSTEM == "Windows":
+    POWERSHELL = os.path.join(
+        os.environ.get("WINDIR", r"C:\Windows"),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe"
+    )
+else:
+    POWERSHELL = "powershell"
+
+
+# ============================================================
 # ÉTAT
 # ============================================================
 
@@ -71,7 +87,6 @@ def _linux_get_text():
         )
 
         if not result:
-
             return None
 
         return result
@@ -98,7 +113,6 @@ def _linux_get_image():
         )
 
         if not result:
-
             return None
 
         if len(result) > MAX_CLIPBOARD_SIZE:
@@ -245,7 +259,7 @@ if ([System.Windows.Forms.Clipboard]::ContainsText()) {
 
         result = subprocess.check_output(
             [
-                "powershell",
+                POWERSHELL,
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
@@ -322,7 +336,7 @@ if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
 
         subprocess.call(
             [
-                "powershell",
+                POWERSHELL,
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
@@ -438,7 +452,7 @@ $text = [System.IO.File]::ReadAllText(
 
         result = subprocess.call(
             [
-                "powershell",
+                POWERSHELL,
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
@@ -533,7 +547,7 @@ $image.Dispose()
 
         result = subprocess.call(
             [
-                "powershell",
+                POWERSHELL,
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
